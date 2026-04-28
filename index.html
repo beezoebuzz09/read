@@ -5,14 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>PDF Audiobook Reader</title>
 
-<!-- PDF.js -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
 
 <style>
   body {
     font-family: -apple-system, sans-serif;
     padding: 20px;
-    background: #f5f5f5;
+    background: #f2f2f2;
   }
 
   h1 {
@@ -20,16 +19,21 @@
   }
 
   button {
-    padding: 10px 15px;
-    margin: 5px;
+    padding: 10px 14px;
+    margin: 5px 3px;
     border: none;
     border-radius: 8px;
     background: black;
     color: white;
+    font-size: 14px;
   }
 
   button:disabled {
     background: gray;
+  }
+
+  input[type="range"] {
+    width: 100%;
   }
 
   #status {
@@ -39,12 +43,12 @@
 
   #textPreview {
     margin-top: 15px;
-    max-height: 200px;
+    max-height: 180px;
     overflow: auto;
     background: white;
     padding: 10px;
     border-radius: 8px;
-    font-size: 14px;
+    font-size: 13px;
   }
 </style>
 </head>
@@ -63,8 +67,8 @@
 
 <br><br>
 
-<label>Speed:</label>
-<input type="range" id="speed" min="0.5" max="2" step="0.1" value="1">
+<label>Speed: <span id="speedValue">1x</span></label>
+<input type="range" id="speed" min="0.3" max="3" step="0.1" value="1">
 
 <br><br>
 
@@ -86,24 +90,42 @@ const previewEl = document.getElementById("textPreview");
 const voiceSelect = document.getElementById("voiceSelect");
 
 
-// Load available voices
+// SPEED DISPLAY
+const speedSlider = document.getElementById("speed");
+const speedValue = document.getElementById("speedValue");
+
+speedSlider.oninput = () => {
+  speedValue.textContent = speedSlider.value + "x";
+};
+
+
+// LOAD VOICES + AUTO SELECT SAMANTHA
 function loadVoices() {
   const voices = speechSynthesis.getVoices();
   voiceSelect.innerHTML = "";
+
+  let samanthaIndex = 0;
 
   voices.forEach((voice, index) => {
     const option = document.createElement("option");
     option.value = index;
     option.textContent = voice.name;
+
+    if (voice.name.toLowerCase().includes("samantha")) {
+      samanthaIndex = index;
+    }
+
     voiceSelect.appendChild(option);
   });
+
+  voiceSelect.value = samanthaIndex;
 }
 
 speechSynthesis.onvoiceschanged = loadVoices;
 loadVoices();
 
 
-// Read PDF
+// READ PDF
 async function readPDF() {
   const file = document.getElementById('fileInput').files[0];
   if (!file) return alert("Select a PDF");
@@ -131,7 +153,7 @@ async function readPDF() {
 }
 
 
-// Better chunking (sentence-based)
+// BETTER CHUNKING (sentence-based)
 function prepareChunks(text) {
   const sentences = text.match(/[^\.!\?]+[\.!\?]+/g) || [text];
 
@@ -139,7 +161,7 @@ function prepareChunks(text) {
   let current = "";
 
   sentences.forEach(sentence => {
-    if ((current + sentence).length > 300) {
+    if ((current + sentence).length > 280) {
       chunks.push(current);
       current = sentence;
     } else {
@@ -153,7 +175,7 @@ function prepareChunks(text) {
 }
 
 
-// Start reading
+// START
 function startReading() {
   stopReading();
   isPaused = false;
@@ -161,7 +183,7 @@ function startReading() {
 }
 
 
-// Speak chunks sequentially
+// SPEAK
 function speakChunk() {
   if (currentChunkIndex >= chunks.length) {
     statusEl.textContent = "Status: Finished";
@@ -175,7 +197,9 @@ function speakChunk() {
   const voices = speechSynthesis.getVoices();
   utterance.voice = voices[voiceSelect.value];
 
-  utterance.rate = document.getElementById("speed").value;
+  utterance.rate = parseFloat(speedSlider.value);
+  utterance.pitch = 1;
+  utterance.volume = 1;
 
   utterance.onend = () => {
     currentChunkIndex++;
@@ -184,11 +208,12 @@ function speakChunk() {
 
   speechSynthesis.speak(utterance);
 
-  statusEl.textContent = `Reading chunk ${currentChunkIndex + 1} / ${chunks.length}`;
+  statusEl.textContent =
+    `Reading ${currentChunkIndex + 1} / ${chunks.length}`;
 }
 
 
-// Controls
+// CONTROLS
 function pauseReading() {
   speechSynthesis.pause();
   isPaused = true;
