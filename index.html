@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PDF Audiobook Reader</title>
+
+<!-- PDF.js -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+
+<style>
+  body {
+    font-family: -apple-system, sans-serif;
+    padding: 20px;
+    background: #f5f5f5;
+  }
+
+  h1 {
+    font-size: 20px;
+  }
+
+  button {
+    padding: 10px 15px;
+    margin: 5px;
+    border: none;
+    border-radius: 8px;
+    background: black;
+    color: white;
+  }
+
+  button:disabled {
+    background: gray;
+  }
+
+  #status {
+    margin-top: 10px;
+    font-size: 14px;
+  }
+
+  #textPreview {
+    margin-top: 15px;
+    max-height: 200px;
+    overflow: auto;
+    background: white;
+    padding: 10px;
+    border-radius: 8px;
+    font-size: 14px;
+  }
+</style>
+</head>
+
+<body>
+
+<h1>📖 PDF Audiobook (Local)</h1>
+
+<input type="file" id="fileInput" accept="application/pdf"><br><br>
+
+<button onclick="readPDF()">Load PDF</button>
+<button onclick="startReading()">▶ Play</button>
+<button onclick="pauseReading()">⏸ Pause</button>
+<button onclick="resumeReading()">⏯ Resume</button>
+<button onclick="stopReading()">⏹ Stop</button>
+
+<br><br>
+
+<label>Speed:</label>
+<input type="range" id="speed" min="0.5" max="2" step="0.1" value="1">
+
+<br><br>
+
+<label>Voice:</label>
+<select id="voiceSelect"></select>
+
+<div id="status">Status: Idle</div>
+
+<div id="textPreview"></div>
+
+<script>
+let fullText = "";
+let chunks = [];
+let currentChunkIndex = 0;
+let isPaused = false;
+
+const statusEl = document.getElementById("status");
+const previewEl = document.getElementById("textPreview");
+const voiceSelect = document.getElementById("voiceSelect");
+
+
+// Load available voices
+function loadVoices() {
+  const voices = speechSynthesis.getVoices();
+  voiceSelect.innerHTML = "";
+
+  voices.forEach((voice, index) => {
+    const option = document.createElement("option");
+    option.value = index;
+    option.textContent = voice.name;
+    voiceSelect.appendChild(option);
+  });
+}
+
+speechSynthesis.onvoiceschanged = loadVoices;
+loadVoices();
+
+
+// Read PDF
+async function readPDF() {
+  const file = document.getElementById('fileInput').files[0];
+  if (!file) return alert("Select a PDF");
+
+  statusEl.textContent = "Status: Reading PDF...";
+
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+
+  fullText = "";
+
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+
+    const strings = content.items.map(item => item.str);
+    fullText += strings.join(" ") + "\n\n";
+  }
+
+  previewEl.textContent = fullText.slice(0, 1000) + "...";
+
+  prepareChunks(fullText);
+
+  statusEl.textContent = "Status: Ready to play";
+}
+
+
+// Better chunking (sentence-based)
+function prepareChunks(text) {
+  const sentences = text.match(/[^\.!\?]+[\.!\?]+/g) || [text];
+
+  chunks = [];
+  let current = "";
+
+  sentences.forEach(sentence => {
+    if ((current + sentence).length > 300) {
+      chunks.push(current);
+      current = sentence;
+    } else {
+      current += sentence;
+    }
+  });
+
+  if (current) chunks.push(current);
+
+  currentChunkIndex = 0;
+}
+
+
+// Start reading
+function startReading() {
+  stopReading();
+  isPaused = false;
+  speakChunk();
+}
+
+
+// Speak chunks sequentially
+function speakChunk() {
+  if (currentChunkIndex >= chunks.length) {
+    statusEl.textContent = "Status: Finished";
+    return;
+  }
+
+  if (isPaused) return;
+
+  const utterance = new SpeechSynthesisUtterance(chunks[currentChunkIndex]);
+
+  const voices = speechSynthesis.getVoices();
+  utterance.voice = voices[voiceSelect.value];
+
+  utterance.rate = document.getElementById("speed").value;
+
+  utterance.onend = () => {
+    currentChunkIndex++;
+    speakChunk();
+  };
+
+  speechSynthesis.speak(utterance);
+
+  statusEl.textContent = `Reading chunk ${currentChunkIndex + 1} / ${chunks.length}`;
+}
+
+
+// Controls
+function pauseReading() {
+  speechSynthesis.pause();
+  isPaused = true;
+  statusEl.textContent = "Status: Paused";
+}
+
+function resumeReading() {
+  isPaused = false;
+  speechSynthesis.resume();
+  statusEl.textContent = "Status: Resumed";
+}
+
+function stopReading() {
+  speechSynthesis.cancel();
+  currentChunkIndex = 0;
+  statusEl.textContent = "Status: Stopped";
+}
+
+</script>
+
+</body>
+</html>
